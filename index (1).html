@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIMTELE-RISK · Prototipo Semana 1</title>
+<style>
+:root{--bg:#f6f8fb;--card:#fff;--tx:#1b2430;--mut:#5b6777;--ac:#1F3A5F;--bd:#d5dce6;--ok:#1d7a46;--bad:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#10151c;--card:#19212b;--tx:#e6ebf2;--mut:#9aa7b8;--ac:#7fa8e0;--bd:#2c3744;--ok:#5fcf8f;--bad:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{background:var(--ac);color:#fff;padding:12px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}header button{background:transparent;border:1px solid #fff8;color:#fff;border-radius:6px;padding:5px 12px;cursor:pointer}
+main{max-width:980px;margin:0 auto;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
+.mod{cursor:pointer}.mod:hover{border-color:var(--ac)}.mod .ico{font-size:30px}.mod h3{margin:6px 0}.mod p{color:var(--mut);font-size:13px;margin:0}
+select,button.run{font:inherit;padding:7px 12px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+button.run{background:var(--ac);color:var(--bg);cursor:pointer;border-color:var(--ac)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0}th,td{border:1px solid var(--bd);padding:4px 7px;text-align:right}th:first-child,td:first-child{text-align:left}th{background:var(--bg)}
+.wrap{overflow-x:auto}.ok{color:var(--ok)}.bad{color:var(--bad)}.mut{color:var(--mut);font-size:13px}code{background:var(--bg);padding:1px 5px;border-radius:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.two{grid-template-columns:1fr}}
+.tag{display:inline-block;font-size:11px;border:1px solid var(--bd);border-radius:10px;padding:1px 8px;margin:2px;color:var(--mut)}
+canvas{width:100%;height:260px;border:1px solid var(--bd);border-radius:8px;background:var(--card)}
+</style></head><body>
+<header><h1>SIMTELE-RISK · Prototipo (Semana 1)</h1><button onclick="home()">Inicio</button><button onclick="hist()">Historial</button></header>
+<main id="app"></main>
+<script>
+/* ===== Teoría de errores ===== */
+const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0), nrm=a=>Math.sqrt(dot(a,a));
+const mv=(A,x)=>A.map(r=>dot(r,x)), sub=(a,b)=>a.map((v,i)=>v-b[i]);
+function errores(x,xr){const ea=nrm(sub(x,xr)),n=nrm(xr),er=n>0?ea/n:NaN;return{ea,er,ep:100*er}}
+const resid=(A,x,b)=>nrm(sub(b,mv(A,x)));
+/* ===== Solvers ===== */
+function jacobi(A,b,tol=1e-10,mx=5000){let x=b.map(()=>0),h=[],nb=nrm(b);for(let k=1;k<=mx;k++){x=A.map((r,i)=>(b[i]-dot(r,x)+r[i]*x[i])/r[i]);const r=resid(A,x,b);h.push(r);if(!isFinite(r))return{x,h,ok:false};if(r<tol*nb)return{x,h,ok:true}}return{x,h,ok:false}}
+function gs(A,b,tol=1e-10,mx=20000){let n=b.length,x=b.map(()=>0),h=[],nb=nrm(b);for(let k=1;k<=mx;k++){for(let i=0;i<n;i++){let s=0;for(let j=0;j<n;j++)if(j!==i)s+=A[i][j]*x[j];x[i]=(b[i]-s)/A[i][i]}const r=resid(A,x,b);h.push(r);if(r<tol*nb)return{x,h,ok:true}}return{x,h,ok:false}}
+function lu(A,b){const n=b.length,U=A.map(r=>r.slice()),L=A.map((_,i)=>A.map((_,j)=>i===j?1:0));
+ for(let k=0;k<n-1;k++)for(let i=k+1;i<n;i++){L[i][k]=U[i][k]/U[k][k];for(let j=k;j<n;j++)U[i][j]-=L[i][k]*U[k][j]}
+ const y=Array(n).fill(0),x=Array(n).fill(0);for(let i=0;i<n;i++){let s=0;for(let j=0;j<i;j++)s+=L[i][j]*y[j];y[i]=b[i]-s}
+ for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=U[i][j]*x[j];x[i]=(y[i]-s)/U[i][i]}return{x,h:[resid(A,x,b)],ok:true}}
+function cg(A,b,tol=1e-10,mx=5000){let x=b.map(()=>0),r=b.slice(),p=r.slice(),rs=dot(r,r),h=[],nb=nrm(b);
+ for(let k=1;k<=mx;k++){const Ap=mv(A,p),a=rs/dot(p,Ap);x=x.map((v,i)=>v+a*p[i]);r=r.map((v,i)=>v-a*Ap[i]);const rn=dot(r,r);h.push(Math.sqrt(rn));if(Math.sqrt(rn)<tol*nb)return{x,h,ok:true};p=r.map((v,i)=>v+(rn/rs)*p[i]);rs=rn}return{x,h,ok:false}}
+/* referencia: eliminación gaussiana con pivoteo parcial */
+function ref(A,b){const n=b.length,M=A.map((r,i)=>[...r,b[i]]);for(let k=0;k<n;k++){let p=k;for(let i=k+1;i<n;i++)if(Math.abs(M[i][k])>Math.abs(M[p][k]))p=i;[M[k],M[p]]=[M[p],M[k]];for(let i=k+1;i<n;i++){const f=M[i][k]/M[k][k];for(let j=k;j<=n;j++)M[i][j]-=f*M[k][j]}}
+ const x=Array(n).fill(0);for(let i=n-1;i>=0;i--){let s=0;for(let j=i+1;j<n;j++)s+=M[i][j]*x[j];x[i]=(M[i][n]-s)/M[i][i]}return x}
+/* ===== Escenarios (matrices SPD) ===== */
+const sysN=()=>{const A=[[4,1,0,0],[1,4,1,0],[0,1,4,1],[0,0,1,4]],xs=[1,2,3,4];return{A,xs,b:mv(A,xs)}};
+const sysE=()=>{const n=10,A=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>i===j?2.2:Math.abs(i-j)===1?-1:0)),xs=Array.from({length:n},(_,i)=>i+1);return{A,xs,b:mv(A,xs)}};
+const sysM=()=>{const n=5,A=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>1/(i+j+1))),xs=Array(n).fill(1);return{A,xs,b:mv(A,xs)}};
+const SYS={NORMAL:sysN,ESTRES:sysE,MAL_CONDICIONADO:sysM};
+const NOM={NORMAL:'NORMAL',ESTRES:'ESTRÉS',MAL_CONDICIONADO:'MAL CONDICIONADO'};
+/* ===== Casos ===== */
+const MODS={
+ deten:{ico:'🛑',n:'Detención',q:'¿Cómo varían tiempo y distancia de detención frente a velocidad, reacción y frenado?',model:'dx/dt = v ; dv/dt = −a(v,t) · x[m], v[m/s], a[m/s²]',met:['RK2','RK4','Trapecio','Simpson','Romberg','Bisección','Newton','Secante'],
+  sc:{NORMAL:'v₀=5 m/s, a=1 m/s², h=0.05 s → t_det=5 s, d=12.5 m',ESTRES:'v₀=6.5 m/s, a=0.6 m/s², reacción 1.5 s, h=0.5 vs 0.01 s',MAL_CONDICIONADO:'v(t)=v₀(1−t/T)²: raíz doble (Newton lineal, sin cambio de signo para bisección)'}},
+ det:{ico:'⚙️',n:'Deterioro',q:'¿Cuándo alcanzaría un indicador hipotético de deterioro un umbral de inspección?',model:'D(t)=D₀+αt+βt² · D[adim], t[meses]; calibración (VᵀV)c=Vᵀy (SPD)',met:['Bisección','Newton','Secante','Jacobi','Gauss-Seidel','LU','Grad. conjugado'],
+  sc:{NORMAL:'D₀=0.10, α=0.02, β=0.001, D*=1 → t*≈21.6 meses',ESTRES:'β×3, α±10 %, mantenimiento retrasado 6 meses',MAL_CONDICIONADO:'Ajuste con matriz de Hilbert (κ≈4.8×10⁵) y raíz casi doble'}},
+ osc:{ico:'🌬️',n:'Oscilaciones',q:'¿Cómo cambia la oscilación ante fuerza externa, amortiguamiento y parámetros?',model:"x′=v ; v′=(F(t)−cv−kx)/m · m[kg], c[N·s/m], k[N/m]",met:['RK2','RK4','Trapecio','Simpson','Romberg','Sist. lineales (calibración)'],
+  sc:{NORMAL:'m=1, k=4, c=0.4 (ζ=0.1), F=0, x₀=0.1, h=0.01',ESTRES:'F=F₀sin(ωt), ω≈ω₀, h=0.1 (RK2 vs RK4)',MAL_CONDICIONADO:'c²≈4mk (ζ→1) y calibración (k,c) casi singular'}},
+ sen:{ico:'📡',n:'Sensores',q:'¿Cómo reconstruir registros faltantes y medir la distorsión por ruido?',model:'y(t)=sin t ó e^(−t) muestreada en nodos con ruido N(0,σ²)',met:['Lagrange','Newton (dif. div.)','Spline cúbico','Raíz de cruce','Sist. lineales (calibración)'],
+  sc:{NORMAL:'sin t, 9 nodos equiespaciados en [0,2π], 3 puntos ocultos',ESTRES:'σ=0.05; 5 vs 15 nodos',MAL_CONDICIONADO:'20 nodos equiespaciados de e^(−t) con ruido 10⁻³ (Vandermonde mal condicionada)'}}};
+const PEND='<span class="tag">métodos propios del módulo: pendiente (Semanas 2–3)</span>';
+/* ===== Persistencia (prototipo: localStorage; Semana 2 → SQL) ===== */
+const KEY='simtele_hist';const load=()=>{try{return JSON.parse(localStorage.getItem(KEY))||[]}catch{return[]}};
+const save=h=>{try{localStorage.setItem(KEY,JSON.stringify(h))}catch(e){alert('No se pudo guardar: '+e)}};
+const $=s=>document.getElementById(s),app=$('app');
+const fx=v=>(isFinite(v)?v.toExponential(3):'∞/NaN');
+/* ===== Vistas ===== */
+function home(){app.innerHTML='<h2>Casos de estudio</h2><p class="mut">Escenarios hipotéticos con datos sintéticos; no describen fallas reales.</p><div class="grid">'+Object.entries(MODS).map(([k,m])=>`<div class="card mod" onclick="modulo('${k}')"><div class="ico">${m.ico}</div><h3>${m.n}</h3><p>${m.q}</p></div>`).join('')+'</div>'}
+function modulo(k,sc='NORMAL'){const m=MODS[k];app.innerHTML=`<h2>${m.ico} ${m.n}</h2><div class="card"><p><b>Pregunta:</b> ${m.q}</p><p><b>Modelo:</b> <code>${m.model}</code></p><p>${m.met.map(x=>`<span class="tag">${x}</span>`).join('')}</p>
+<p><label>Escenario: <select id="sc" onchange="modulo('${k}',this.value)">${Object.keys(NOM).map(s=>`<option value="${s}" ${s===sc?'selected':''}>${NOM[s]}</option>`).join('')}</select></label>
+<button class="run" onclick="correr('${k}',document.getElementById('sc').value)">Ejecutar sistemas lineales</button></p><p class="mut">${m.sc[sc]}</p>${PEND}</div><div id="out"></div>`}
+function correr(k,sc,guardar=true){const {A,b,xs}=SYS[sc](),xr=ref(A,b),t0=performance.now();
+ const R=[['Jacobi',jacobi(A,b)],['Gauss-Seidel',gs(A,b)],['LU',lu(A,b)],['Grad. conjugado',cg(A,b)]].map(([n,r])=>({n,...r,...errores(r.x,xs),res:resid(A,r.x,b)}));
+ const er=errores(xr,xs);R.push({n:'Referencia (pivoteo)',x:xr,h:[],ok:true,...er,res:resid(A,xr,b)});
+ const kap=est_kappa(A);const sal={k,sc,fecha:new Date().toISOString(),n:b.length,kappa:kap,R:R.map(r=>({n:r.n,it:r.h.length,ok:r.ok,ea:r.ea,er:r.er,ep:r.ep,res:r.res,h:r.h.slice(0,400)}))};
+ if(guardar){const h=load();h.unshift(sal);save(h.slice(0,50))}mostrar(sal)}
+function est_kappa(A){/* κ₂ de A SPD: λmax por potencias y λmin por potencias inversas (usa LU de referencia) */
+ const n=A.length;let v=Array(n).fill(1),lm=0;for(let i=0;i<5000;i++){const w=mv(A,v),nn=nrm(w);v=w.map(z=>z/nn);lm=dot(v,mv(A,v))}
+ let u=Array(n).fill(1),li=0;for(let i=0;i<5000;i++){const w=ref(A,u),nn=nrm(w);u=w.map(z=>z/nn);li=nn}return lm*li}
+function mostrar(s){const m=MODS[s.k],o=$('out')||(app.innerHTML+='<div id="out"></div>',$('out'));
+ const div=s.R.find(r=>r.n==='Jacobi'&&!r.ok&&(!isFinite(r.res)||r.res>1));
+ const mat=`Número de condición κ₂(A) ≈ ${s.kappa.toExponential(2)} (n=${s.n}). `+(s.kappa>1e4?'Sistema <b>mal condicionado</b>: se esperan pérdidas de ≈'+Math.log10(s.kappa).toFixed(1)+' cifras; un residuo pequeño NO garantiza error pequeño. ':'Sistema bien condicionado. ')+(div?'Jacobi <b>no converge</b> (ρ(B_J)≥1): es un fallo de convergencia, distinto del mal condicionamiento. ':'')+'CG y LU son los más robustos; GS es más rápido que Jacobi cuando ambos convergen.';
+ const caso=s.k==='det'?'El sistema es la calibración de D(t): un error en los coeficientes se propaga al tiempo estimado al umbral, así que un ajuste mal condicionado no sustenta una fecha de inspección confiable.':'Aquí el sistema lineal es auxiliar (calibración de parámetros). La conclusión física completa se redactará al implementar los métodos propios del módulo (Semanas 2–3). Con datos sintéticos no puede inferirse el comportamiento de un sistema real.';
+ o.innerHTML=`<div class="card"><h3>Resultados · ${NOM[s.sc]} · ${new Date(s.fecha).toLocaleString()}</h3><div class="wrap"><table><tr><th>Método</th><th>Iter.</th><th>Convergió</th><th>E abs</th><th>E rel</th><th>E %</th><th>‖r‖₂</th></tr>${s.R.map(r=>`<tr><td>${r.n}</td><td>${r.it||'directo'}</td><td class="${r.ok?'ok':'bad'}">${r.ok?'Sí':'No'}</td><td>${fx(r.ea)}</td><td>${fx(r.er)}</td><td>${fx(r.ep)}</td><td>${fx(r.res)}</td></tr>`).join('')}</table></div>
+ <canvas id="cv" width="900" height="260"></canvas><p class="mut">Residual (log₁₀) vs iteración; Jacobi/GS/CG. Se muestran hasta 400 iteraciones.</p>
+ <div class="two"><div class="card"><h4>Conclusión matemática</h4><p>${mat}</p></div><div class="card"><h4>Conclusión sobre el caso</h4><p>${caso}</p></div></div></div>`;graf(s)}
+function graf(s){const c=$('cv'),g=c.getContext('2d'),W=c.width,H=c.height,cols={'Jacobi':'#d9534f','Gauss-Seidel':'#3b82f6','Grad. conjugado':'#22a06b'};
+ const css=getComputedStyle(document.body);g.fillStyle=css.color;g.font='12px sans-serif';
+ const ser=s.R.filter(r=>cols[r.n]&&r.h.length).map(r=>({n:r.n,y:r.h.map(v=>isFinite(v)&&v>0?Math.log10(v):NaN)}));
+ const ys=ser.flatMap(a=>a.y).filter(isFinite),mn=Math.min(-16,...ys),mx=Math.max(1,...ys),nx=Math.max(...ser.map(a=>a.y.length),2);
+ const X=i=>40+(W-60)*i/(nx-1),Y=v=>10+(H-40)*(mx-v)/(mx-mn);
+ g.strokeStyle='#8884';for(let v=Math.ceil(mn);v<=mx;v+=4){g.beginPath();g.moveTo(40,Y(v));g.lineTo(W-10,Y(v));g.stroke();g.fillText('1e'+v,2,Y(v)+4)}
+ ser.forEach((a,j)=>{g.strokeStyle=cols[a.n];g.lineWidth=2;g.beginPath();let st=false;a.y.forEach((v,i)=>{if(!isFinite(v)){st=false;return}st?g.lineTo(X(i),Y(Math.min(v,mx))):g.moveTo(X(i),Y(Math.min(v,mx)));st=true});g.stroke();g.fillStyle=cols[a.n];g.fillText(a.n,50+j*120,H-8)})}
+function hist(){const h=load();app.innerHTML='<h2>Historial de experimentos</h2>'+(h.length?`<div class="card wrap"><table><tr><th>Fecha</th><th>Caso</th><th>Escenario</th><th>κ(A)</th><th>Acciones</th></tr>${h.map((s,i)=>`<tr><td>${new Date(s.fecha).toLocaleString()}</td><td>${MODS[s.k].n}</td><td>${NOM[s.sc]}</td><td>${s.kappa.toExponential(2)}</td><td><button onclick="abrir(${i})">Abrir</button> <button onclick="relanzar(${i})">Relanzar</button></td></tr>`).join('')}</table></div><div id="out"></div>`:'<p class="mut">Aún no hay simulaciones guardadas. Ejecuta una desde un módulo.</p>')}
+function abrir(i){mostrar(load()[i])}
+function relanzar(i){const s=load()[i];modulo(s.k,s.sc);correr(s.k,s.sc)}
+home();
+</script></body></html>
